@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Zombie Shooter</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: #111;
+      font-family: Arial, sans-serif;
+      overflow: hidden;
+    }
+    .game-container {
+      text-align: center;
+      color: white;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 28px;
+      color: #f39c12;
+    }
+    .score {
+      font-size: 18px;
+      margin-bottom: 10px;
+    }
+    #gameCanvas {
+      border: 3px solid #34495e;
+      max-width: 100%;
+      max-height: 90vh;
+    }
+  </style>
+</head>
+<body>
+  <div class="game-container">
+    <h1>🔫 Zombie Shooter</h1>
+    <div class="score">Score: <span id="score">0</span> | Health: <span id="health">100</span></div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const scoreElement = document.getElementById("score");
+    const healthElement = document.getElementById("health");
+
+    // Game variables
+    let score = 0;
+    let health = 100;
+
+    // Player
+    const player = {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      radius: 15,
+      color: "blue",
+      speed: 3,
+      angle: 0
+    };
+
+    // Bullets
+    const bullets = [];
+    const bulletSpeed = 7;
+
+    // Enemies
+    const enemies = [];
+    const enemySpawnInterval = 1500;
+    let lastEnemySpawn = 0;
+
+    // Walls (Map)
+    const walls = [
+      { x: 100, y: 100, width: 200, height: 20 },
+      { x: 500, y: 150, width: 20, height: 150 },
+      { x: 300, y: 400, width: 300, height: 20 },
+      { x: 150, y: 300, width: 20, height: 100 },
+    ];
+
+    // Controls
+    const keys = {};
+    window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+    window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+    // Mouse control for aiming
+    let mouse = { x: 0, y: 0 };
+    canvas.addEventListener("mousemove", e => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = e.clientX - rect.left;
+      mouse.y = e.clientY - rect.top;
+    });
+
+    // Shoot on click
+    canvas.addEventListener("click", () => {
+      const angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+      bullets.push({
+        x: player.x,
+        y: player.y,
+        angle: angle,
+        speed: bulletSpeed,
+        radius: 5,
+        color: "yellow"
+      });
+    });
+
+    // Spawn enemy
+    function spawnEnemy() {
+      const side = Math.floor(Math.random() * 4);
+      let x, y;
+      if (side === 0) { x = Math.random() * canvas.width; y = -30; }
+      else if (side === 1) { x = canvas.width + 30; y = Math.random() * canvas.height; }
+      else if (side === 2) { x = Math.random() * canvas.width; y = canvas.height + 30; }
+      else { x = -30; y = Math.random() * canvas.height; }
+
+      enemies.push({
+        x: x,
+        y: y,
+        radius: 15,
+        color: "green",
+        speed: 1 + Math.random() * 1.5
+      });
+    }
+
+    // Collision detection (circle vs circle)
+    function circleCollide(c1, c2) {
+      const dx = c1.x - c2.x;
+      const dy = c1.y - c2.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      return distance < c1.radius + c2.radius;
+    }
+
+    // Rect vs circle collision (for walls)
+    function rectCircleCollide(rect, circle) {
+      let cx = circle.x;
+      let cy = circle.y;
+      const rx = rect.x;
+      const ry = rect.y;
+      const rw = rect.width;
+      const rh = rect.height;
+
+      let testX = cx;
+      let testY = cy;
+
+      if (cx < rx) testX = rx;
+      else if (cx > rx + rw) testX = rx + rw;
+
+      if (cy < ry) testY = ry;
+      else if (cy > ry + rh) testY = ry + rh;
+
+      const distX = cx - testX;
+      const distY = cy - testY;
+      const distance = Math.sqrt(distX * distX + distY * distY);
+
+      return distance <= circle.radius;
+    }
+
+    // Game loop
+    function gameLoop(timestamp) {
+      // Clear canvas
+      ctx.fillStyle = "#222";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw walls
+      ctx.fillStyle = "#8B4513";
+      walls.forEach(wall => {
+        ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+      });
+
+      // Move player (WASD or Arrow Keys)
+      if (keys["w"] || keys["arrowup"]) player.y -= player.speed;
+      if (keys["s"] || keys["arrowdown"]) player.y += player.speed;
+      if (keys["a"] || keys["arrowleft"]) player.x -= player.speed;
+      if (keys["d"] || keys["arrowright"]) player.x += player.speed;
+
+      // Keep player in bounds
+      player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+      player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+
+      // Prevent player from entering walls
+      for (let wall of walls) {
+        if (rectCircleCollide(wall, player)) {
+          // Simple push back
+          const angle = Math.atan2(player.y - (wall.y + wall.height / 2), player.x - (wall.x + wall.width / 2));
+          player.x = wall.x + wall.width / 2 + (wall.width / 2 + player.radius + 5) * Math.cos(angle);
+          player.y = wall.y + wall.height / 2 + (wall.height / 2 + player.radius + 5) * Math.sin(angle);
+        }
+      }
+
+      // Draw player (with direction)
+      player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      ctx.rotate(player.angle);
+      ctx.fillStyle = player.color;
+      ctx.beginPath();
+      ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+      ctx.fill();
+      // Gun barrel
+      ctx.fillStyle = "gray";
+      ctx.fillRect(0, -2, 25, 4);
+      ctx.restore();
+
+      // Shoot bullets
+      bullets.forEach((bullet, index) => {
+        bullet.x += Math.cos(bullet.angle) * bullet.speed;
+        bullet.y += Math.sin(bullet.angle) * bullet.speed;
+
+        // Draw bullet
+        ctx.fillStyle = bullet.color;
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Remove if out of screen
+        if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
+          bullets.splice(index, 1);
+        }
+      });
+
+      // Spawn enemies
+      if (timestamp - lastEnemySpawn > enemySpawnInterval) {
+        spawnEnemy();
+        lastEnemySpawn = timestamp;
+      }
+
+      // Move and draw enemies
+      enemies.forEach((enemy, eIndex) => {
+        // Move toward player
+        const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+        enemy.x += Math.cos(angle) * enemy.speed;
+        enemy.y += Math.sin(angle) * enemy.speed;
+
+        // Draw enemy
+        ctx.fillStyle = enemy.color;
+        ctx.beginPath();
+        ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Collision with player
+        if (circleCollide(player, enemy)) {
+          health -= 0.5;
+          healthElement.textContent = health.toFixed(1);
+        }
+
+        // Collision with bullets
+        bullets.forEach((bullet, bIndex) => {
+          if (circleCollide(bullet, enemy)) {
+            enemies.splice(eIndex, 1);
+            bullets.splice(bIndex, 1);
+            score += 10;
+            scoreElement.textContent = score;
+          }
+        });
+      });
+
+      // Update health
+      if (health <= 0) {
+        gameOver();
+      }
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    function gameOver() {
+      ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "red";
+      ctx.font = "40px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText("💀 GAME OVER", canvas.width / 2, canvas.height / 2 - 20);
+      ctx.fillStyle = "white";
+      ctx.font = "25px Arial";
+      ctx.fillText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2 + 20);
+      ctx.fillText("Refresh to play again", canvas.width / 2, canvas.height / 2 + 60);
+    }
+
+    // Start game
+    gameLoop(0);
+  </script>
+</body>
+</html>
